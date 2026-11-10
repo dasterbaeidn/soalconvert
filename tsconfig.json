@@ -15,7 +15,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["node"]
+    "types": ["node", "jszip"]
   },
   "include": ["src", "server", "app.config.ts", "vite.config.ts"]
 }

@@ -1,5 +1,6 @@
 import { useRef, useState, type DragEvent, type ChangeEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
+import JSZip from 'jszip'
 import './styles.css'
 
 type Report = {
@@ -22,6 +23,51 @@ function decodeReportHeader(value: string | null): Report {
   const binary = atob(normalized)
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
   return JSON.parse(new TextDecoder().decode(bytes)) as Report
+}
+
+const MAX_SERVERLESS_UPLOAD = 4_000_000
+
+async function compressDocxImages(file: File): Promise<File> {
+  if (file.size <= MAX_SERVERLESS_UPLOAD) return file
+  const zip = await JSZip.loadAsync(await file.arrayBuffer())
+  const imageEntries = Object.keys(zip.files).filter((name) => name.startsWith('word/media/') && name.toLowerCase().endsWith('.png'))
+  for (const name of imageEntries) {
+    const original = await zip.files[name].async('blob')
+    const url = URL.createObjectURL(original)
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image()
+        element.onload = () => resolve(element)
+        element.onerror = () => reject(new Error(`Gambar ${name} tidak dapat dibaca.`))
+        element.src = url
+      })
+      const scale = Math.min(1, 1800 / Math.max(image.naturalWidth, image.naturalHeight))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+      const context = canvas.getContext('2d')
+      if (context) context.fillStyle = '#ffffff'
+      context?.fillRect(0, 0, canvas.width, canvas.height)
+      context?.drawImage(image, 0, 0, canvas.width, canvas.height)
+      const compressed = await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error(`Gambar ${name} gagal dikompres.`)), 'image/jpeg', 0.82))
+      const jpgName = name.replace(/\.png$/i, '.jpg')
+      const relativeJpgName = jpgName.replace(/^word\//, '')
+      zip.file(jpgName, compressed)
+      zip.remove(name)
+      for (const textName of ['[Content_Types].xml', 'word/_rels/document.xml.rels']) {
+        const entry = zip.files[textName]
+        if (entry) {
+          const text = await entry.async('string')
+          zip.file(textName, text.replaceAll(name, jpgName).replaceAll(name.replace(/^word\//, ''), relativeJpgName).replaceAll('image/png', 'image/jpeg').replace('Extension="png"', 'Extension="jpg"'))
+        }
+      }
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+  const bytes = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+  if (bytes.size > MAX_SERVERLESS_UPLOAD) throw new Error('Dokumen sumber masih terlalu besar setelah kompresi gambar. Coba kurangi ukuran gambar di Word lalu unggah kembali.')
+  return new File([bytes], file.name, { type: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
 }
 
 function FileGlyph() {
@@ -81,10 +127,11 @@ function App() {
     setStatus('processing')
     setError('')
     setResult(null)
-    const form = new FormData()
-    form.append('source', source)
-    form.append('template', template)
     try {
+      const compactSource = await compressDocxImages(source)
+      const form = new FormData()
+      form.append('source', compactSource)
+      form.append('template', template)
       const response = await fetch('/api/convert', { method: 'POST', body: form })
       const contentType = response.headers.get('content-type') || ''
       if (!response.ok) {

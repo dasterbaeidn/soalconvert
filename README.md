@@ -17,3 +17,5 @@ pnpm test:processor
 ```
 
 Opsi merah (`EE0000`, `FF0000`, `C00000`, atau `red`) menjadi `1`; opsi lain menjadi `0`. Label A–D eksplisit dihapus, dan stimulus yang ditemukan sebelum kelompok soal disalin ke setiap nomor terkait. File upload dan hasil diproses sementara.
+
+Pada deployment Vercel, gambar PNG di dalam DOCX sumber dikompres sementara di browser sebelum upload agar dokumen besar tetap berada di bawah batas payload serverless. Nama file dan relasi media DOCX tidak diubah.

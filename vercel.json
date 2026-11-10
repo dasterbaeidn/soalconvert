@@ -4,11 +4,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/convert.py": {
-      "runtime": "python3.12",
-      "includeFiles": ["processor/**"]
-    },
-    "api/health.py": {
-      "runtime": "python3.12"
+      "includeFiles": "processor/**"
     }
   }
 }

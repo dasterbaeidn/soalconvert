@@ -19,6 +19,7 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "express": "latest",
+    "jszip": "latest",
     "multer": "latest",
     "react": "latest",
     "react-dom": "latest",
