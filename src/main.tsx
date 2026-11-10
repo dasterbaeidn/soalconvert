@@ -16,6 +16,14 @@ type Result = {
   downloads: { docx: string; report: string }
 }
 
+function decodeReportHeader(value: string | null): Report {
+  if (!value) throw new Error('Laporan hasil tidak ditemukan pada respons server.')
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)
+  const binary = atob(normalized)
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  return JSON.parse(new TextDecoder().decode(bytes)) as Report
+}
+
 function FileGlyph() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.75h6.1L18.5 9v10.75A1.25 1.25 0 0 1 17.25 21h-10A1.25 1.25 0 0 1 6 19.75V5a1.25 1.25 0 0 1 1.25-1.25Z"/><path d="M13 3.75V9h5.5M9 13h6M9 16.5h6"/></svg>
 }
@@ -78,9 +86,20 @@ function App() {
     form.append('template', template)
     try {
       const response = await fetch('/api/convert', { method: 'POST', body: form })
-      const payload = await response.json() as Result & { error?: string }
-      if (!response.ok) throw new Error(payload.error || 'Konversi tidak berhasil.')
-      setResult(payload)
+      const contentType = response.headers.get('content-type') || ''
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string }
+        throw new Error(payload.error || 'Konversi tidak berhasil.')
+      }
+      if (contentType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+        const docx = await response.blob()
+        const report = decodeReportHeader(response.headers.get('x-soalconvert-report'))
+        const reportBlob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' })
+        setResult({ report, downloads: { docx: URL.createObjectURL(docx), report: URL.createObjectURL(reportBlob) } })
+      } else {
+        const payload = await response.json() as Result
+        setResult(payload)
+      }
       setStatus('done')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Konversi tidak berhasil.')
